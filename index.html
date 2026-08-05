@@ -131,6 +131,11 @@ a{color:var(--gold)}
 .cal-edit{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .cal-edit label{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.6}
 .btn-cal-save{background:var(--gold);color:var(--navy);font-weight:700;border-radius:8px;padding:9px 15px}
+.per-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
+.per-grid label{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.6}
+.per-grid input{background:#0a1622;border:1px solid var(--line);color:var(--cream);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:14px}
+.per-check{display:flex;align-items:center;gap:7px;font-size:12.5px;opacity:.85;margin-top:10px}
+.per-hint{font-size:12px;opacity:.75;margin-top:8px;line-height:1.4}
 
 /* CONTROLE */
 .ctrl{max-width:760px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:16px}
@@ -413,6 +418,20 @@ function renderCtrl(){
       <span class="saved" id="svHora">salvo ✓</span>
     </div>
     <div class="panel">
+      <h3>Gerar conteúdo por período</h3>
+      <div class="sub">Gera vários posts de uma vez, já agendados no período escolhido. Segue as regras e não repete o que já existe. Cada post é uma produção real — pode demorar se pedir muitos.</div>
+      <div class="per-grid">
+        <label>De<input type="date" id="perDe"></label>
+        <label>Até<input type="date" id="perAte"></label>
+        <label>Posts/dia<input type="number" id="perQtd" min="1" max="5" value="1"></label>
+        <label style="flex:1;min-width:150px">Horários (vírgula)<input type="text" id="perHoras" placeholder="09:00, 18:00" value="18:00"></label>
+        <label style="flex:1;min-width:170px">Foco/subtema (opcional)<input type="text" id="perFoco" placeholder="ex.: direitos de quem foi demitido"></label>
+      </div>
+      <label class="per-check"><input type="checkbox" id="perSab"> Incluir sábados</label>
+      <button class="btn-toggle btn-play" id="btnPeriodo" style="margin-top:10px">Gerar período</button>
+      <div class="per-hint" id="perHint"></div>
+    </div>
+    <div class="panel">
       <h3>Fila</h3>
       <div class="stat-grid" style="margin-top:6px">
         <div class="stat"><div class="n">${POSTS.filter(p=>p.status==='pendente').length}</div><div class="l">Pendentes</div></div>
@@ -440,6 +459,26 @@ function renderCtrl(){
   const bt=$("#btnPause");if(bt)bt.onclick=async()=>{CONFIG.pausado=!paused;await sb.from("bazela_config").update({pausado:CONFIG.pausado,updated_at:new Date().toISOString()}).eq("id",1);renderCtrl();};
   const bs=$("#btnHoraSalvar");if(bs)bs.onclick=async()=>{const h=$("#horaPadrao").value||"18:00";CONFIG.hora_padrao=h;await sb.from("bazela_config").update({hora_padrao:h}).eq("id",1);const s=$("#svHora");if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1400);}};
   const ba=$("#btnHoraAplicar");if(ba)ba.onclick=async()=>{const h=$("#horaPadrao").value||"18:00";if(!confirm("Aplicar "+h+" a TODOS os posts ainda não publicados? Isso sobrescreve os horários individuais que você tenha ajustado."))return;CONFIG.hora_padrao=h;await sb.from("bazela_config").update({hora_padrao:h}).eq("id",1);await sb.from("bazela_posts").update({hora_agendada:h}).neq("status","publicado");POSTS.forEach(p=>{if(p.status!=="publicado")p.hora_agendada=h;});const s=$("#svHora");if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1400);}renderCtrl();};
+  const bp=$("#btnPeriodo");if(bp)bp.onclick=async()=>{
+    const de=$("#perDe").value, ate=$("#perAte").value;
+    const qtd=Math.max(1,Math.min(5,parseInt($("#perQtd").value||"1")));
+    let horas=$("#perHoras").value.split(",").map(s=>s.trim()).filter(Boolean);
+    const foco=$("#perFoco").value.trim(), incSab=$("#perSab").checked;
+    const hint=$("#perHint");
+    if(!de||!ate){hint.textContent="Escolha as datas de início e fim.";return;}
+    if(de>ate){hint.textContent="A data inicial precisa ser antes (ou igual) à final.";return;}
+    if(!horas.length)horas=["18:00"];
+    while(horas.length<qtd)horas.push(horas[horas.length-1]);
+    horas=horas.slice(0,qtd);
+    const slots=[]; let d=new Date(de+"T00:00:00"); const end=new Date(ate+"T00:00:00");
+    while(d<=end){ if(incSab||d.getDay()!==6){ horas.forEach(h=>slots.push({data:ymd(d),hora:h})); } d.setDate(d.getDate()+1); }
+    if(!slots.length){hint.textContent="Nenhum dia no período (confira o filtro de sábado).";return;}
+    if(!confirm(`Vai gerar ${slots.length} posts (${qtd}/dia), agendados de ${de} a ${ate}. Cada um é uma produção real e leva alguns minutos. Confirmar?`))return;
+    const rows=slots.map(s=>({tipo:"periodo",subtema:foco||null,data_alvo:s.data,hora_alvo:s.hora,status:"pendente",pedido_em:new Date().toISOString()}));
+    await sb.from("bazela_geracoes").insert(rows);
+    hint.textContent=`✓ ${slots.length} gerações na fila. Elas vão saindo aos poucos — acompanhe na aba Correções.`;
+    setTimeout(goToCorr,1200);
+  };
 }
 
 /* helpers */
@@ -448,6 +487,7 @@ function cap(s){return s?s[0].toUpperCase()+s.slice(1):s;}
 function fmtN(n){return n==null?'—':n>=1000?(n/1000).toFixed(1).replace('.0','')+'k':''+n;}
 function fmtShort(iso){const d=new Date(iso+"T00:00:00");return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});}
 function fmtLong(iso){const d=new Date(iso+"T00:00:00");return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});}
+function ymd(dt){return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,'0')+"-"+String(dt.getDate()).padStart(2,'0');}
 boot();
 </script>
 </body>

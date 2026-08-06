@@ -404,6 +404,7 @@ function renderCtrl(){
         <div>Status: <span class="switch-state ${paused?'pausada':'ativa'}">${paused?'PAUSADA':'ATIVA'}</span></div>
         <button class="btn-toggle ${paused?'btn-play':'btn-pause'}" id="btnPause">${paused?'▶ Retomar':'⏸ Pausar tudo'}</button>
       </div>
+      <label class="per-check" style="margin-top:14px"><input type="checkbox" id="chkStory" ${CONFIG.cross_story!==false?'checked':''}> Publicar também um teaser no Story a cada post</label>
     </div>
     <div class="panel">
       <h3>Horário padrão de publicação</h3>
@@ -457,6 +458,7 @@ function renderCtrl(){
       ${pub.length&&!best?.m_reach?'<div class="empty" style="margin-top:8px">As métricas aparecem aqui assim que o Instagram processar as visualizações dos posts.</div>':''}
     </div>`;
   const bt=$("#btnPause");if(bt)bt.onclick=async()=>{CONFIG.pausado=!paused;await sb.from("bazela_config").update({pausado:CONFIG.pausado,updated_at:new Date().toISOString()}).eq("id",1);renderCtrl();};
+  const cs=$("#chkStory");if(cs)cs.onchange=async()=>{CONFIG.cross_story=cs.checked;await sb.from("bazela_config").update({cross_story:cs.checked}).eq("id",1);};
   const bs=$("#btnHoraSalvar");if(bs)bs.onclick=async()=>{const h=$("#horaPadrao").value||"18:00";CONFIG.hora_padrao=h;await sb.from("bazela_config").update({hora_padrao:h}).eq("id",1);const s=$("#svHora");if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1400);}};
   const ba=$("#btnHoraAplicar");if(ba)ba.onclick=async()=>{const h=$("#horaPadrao").value||"18:00";if(!confirm("Aplicar "+h+" a TODOS os posts ainda não publicados? Isso sobrescreve os horários individuais que você tenha ajustado."))return;CONFIG.hora_padrao=h;await sb.from("bazela_config").update({hora_padrao:h}).eq("id",1);await sb.from("bazela_posts").update({hora_agendada:h}).neq("status","publicado");POSTS.forEach(p=>{if(p.status!=="publicado")p.hora_agendada=h;});const s=$("#svHora");if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1400);}renderCtrl();};
   const bp=$("#btnPeriodo");if(bp)bp.onclick=async()=>{

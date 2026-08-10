@@ -228,7 +228,7 @@ a{color:var(--gold)}
 <script>
 const SB_URL="https://rsfhhsnxdsxdmytcihkv.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzZmhoc254ZHN4ZG15dGNpaGt2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0OTExNjUsImV4cCI6MjEwMDA2NzE2NX0.aLNTXtMsfbqwixR8B1kLLMI9tgbwIlFMzPn6SknU-Nc";
-const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{autoRefreshToken:true,persistSession:true}});
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 let POSTS=[],CONFIG={pausado:false},GERACOES=[],FILTER="todos",TAB="aprovacao",SLIDE={},OPEN={},OPENCAL=new Set();
 
@@ -250,13 +250,15 @@ function wireGerar(){
   $("#gerarClose").onclick=()=>{$("#gerarForm").style.display="none";};
   $("#gerarGo").onclick=async()=>{
     const sub=$("#gerarSub").value.trim();
-    await sb.from("bazela_geracoes").insert({tipo:"novo",subtema:sub||null,status:"pendente",pedido_em:new Date().toISOString()});
+    const {data:gi,error:ge}=await sb.from("bazela_geracoes").insert({tipo:"novo",subtema:sub||null,status:"pendente",pedido_em:new Date().toISOString()}).select();
+    if(ge||!gi||!gi.length){return failSave(ge);}
     $("#gerarSub").value="";$("#gerarForm").style.display="none";
     goToCorr();
   };
 }
 async function pedirSubstituto(slug,sub){
-  await sb.from("bazela_geracoes").insert({tipo:"substituto",origem_slug:slug,subtema:sub||null,status:"pendente",pedido_em:new Date().toISOString()});
+  const {data:gi,error:ge}=await sb.from("bazela_geracoes").insert({tipo:"substituto",origem_slug:slug,subtema:sub||null,status:"pendente",pedido_em:new Date().toISOString()}).select();
+  if(ge||!gi||!gi.length){return failSave(ge);}
   goToCorr();
 }
 function goToCorr(){const t=document.querySelector("[data-tab='correcoes']");if(t)t.click();loadAll();}
@@ -365,7 +367,20 @@ function renderAprov(){
   g.querySelectorAll(".btn-sub-send").forEach(b=>b.onclick=()=>{pedirSubstituto(b.dataset.slug,$("#subt-"+b.dataset.id).value.trim());});
 }
 function corrNote(p){const q=esc(p.correcao_pedido||"");if(p.correcao_status==="pendente")return `⏳ Correção solicitada: "${q}" — na fila do time.`;if(p.correcao_status==="em_andamento")return `🔧 O time está corrigindo: "${q}"`;if(p.correcao_status==="feita")return `✓ Correção feita${p.correcao_resposta?': '+esc(p.correcao_resposta):''}. Revise e aprove.`;return "";}
-async function save(id,patch){const p=POSTS.find(x=>x.id===id);Object.assign(p,patch);const {error}=await sb.from("bazela_posts").update({...patch,updated_at:new Date().toISOString()}).eq("id",id);renderTab();if(!error){const s=$("#sv-"+id);if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1200);}}}
+async function failSave(error){
+  let dead=false; try{const {data:{user}}=await sb.auth.getUser(); dead=!user;}catch(e){dead=true;}
+  if(dead){alert("🔒 Sua sessão expirou.\n\nEntre de novo para aprovar e salvar. Nada foi perdido — é só refazer a ação depois de logar.");location.reload();return;}
+  alert("⚠️ Não consegui salvar agora. A alteração NÃO foi gravada — tente de novo."+(error&&error.message?"\n("+error.message+")":""));
+  await loadAll();
+}
+async function save(id,patch){
+  const p=POSTS.find(x=>x.id===id); if(!p) return;
+  const prev={}; for(const k in patch) prev[k]=p[k];
+  Object.assign(p,patch); renderTab();
+  const {data,error}=await sb.from("bazela_posts").update({...patch,updated_at:new Date().toISOString()}).eq("id",id).select();
+  if(error||!data||!data.length){Object.assign(p,prev);renderTab();return failSave(error);}
+  const s=$("#sv-"+id);if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1200);}
+}
 
 /* ---------- CALENDÁRIO ---------- */
 function renderCal(){
@@ -385,7 +400,7 @@ function renderCal(){
     box.appendChild(it);
   });
   box.querySelectorAll(".cal-item").forEach(it=>it.onclick=()=>{const id=+it.dataset.id;const d=$("#cd-"+id);const op=d.classList.toggle("open");op?OPENCAL.add(id):OPENCAL.delete(id);});
-  box.querySelectorAll(".btn-cal-save").forEach(b=>b.onclick=async(e)=>{e.stopPropagation();const id=+b.dataset.id;const data=$("#ce-data-"+id).value;const hora=$("#ce-hora-"+id).value||"18:00";const p=POSTS.find(x=>x.id===id);const upd={hora_agendada:hora};if(data)upd.data_agendada=data;Object.assign(p,upd);OPENCAL.add(id);await sb.from("bazela_posts").update(upd).eq("id",id);renderCal();const s=$("#ce-sv-"+id);if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1400);}});
+  box.querySelectorAll(".btn-cal-save").forEach(b=>b.onclick=async(e)=>{e.stopPropagation();const id=+b.dataset.id;const data=$("#ce-data-"+id).value;const hora=$("#ce-hora-"+id).value||"18:00";const p=POSTS.find(x=>x.id===id);const prev={data_agendada:p.data_agendada,hora_agendada:p.hora_agendada};const upd={hora_agendada:hora};if(data)upd.data_agendada=data;Object.assign(p,upd);OPENCAL.add(id);const {data:rows,error}=await sb.from("bazela_posts").update(upd).eq("id",id).select();if(error||!rows||!rows.length){Object.assign(p,prev);renderCal();return failSave(error);}renderCal();const s=$("#ce-sv-"+id);if(s){s.classList.add("show");setTimeout(()=>s.classList.remove("show"),1400);}});
 }
 
 /* ---------- CONTROLE ---------- */
